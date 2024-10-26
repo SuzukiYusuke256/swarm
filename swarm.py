@@ -4,61 +4,76 @@ import os
 import math as m
 import cv2 # type: ignore
 
+# 壁から離れようとする処理
+def v_wall(Lx,Ly,x,y):
+
+    # parameters for repulsive force
+    H = 1
+    a = 5
+
+    # 壁によって生じるx,y方向の速度
+    vx_wall = H * m.cosh(a*x)**-2 - H * m.cosh(a*(x-Lx))**-2
+    vy_wall = H * m.cosh(a*y)**-2 - H * m.cosh(a*(y-Ly))**-2
+
+    return [vx_wall,vy_wall]
+
+
 # 群れっぽい動きを再現する関数
-def update_velocity(positions, velocities, cutoff):
+def update_direction(Lx,Ly,x,y,theta,cutoff):
     # 動きの規則
     # 1. みんなと同じ方向に動く
     # 2. みんなと近づきすぎると離れる方向に動く
     # 3. みんなと離れすぎると近づく方向に動く
 
-    for i in range(0,len(positions[0])):
+    for i in range(0,len(x)):
 
-        x_list = []
-        y_list = []
-        vx_list = []    
-        vy_list = []
+        theta_list = []    
 
-        for j in range(0,len(positions[0])):
+        for j in range(0,len(x)):
+            
+            # 自分と異なるデータ点のみ考慮
+            if i == j: continue
 
-            rel_pos = [positions[0][j] - positions[0][i], positions[1][j] - positions[1][i]]
+            rel_pos = [x[j] - x[i], y[j] - y[i]]
             
             if(np.linalg.norm(rel_pos) < cutoff):
+                theta_list.append(theta[j])
 
-                x_list.append(positions[0][j])
-                y_list.append(positions[1][j])
-                vx_list.append(velocities[0][j])
-                vy_list.append(velocities[1][j])
 
         # update velocity
         # 周囲の速度の平均
-        
+        new_theta = theta[i]
+        vx_points = vy_points = 0
 
-        new_vx1 = np.average(vx_list)
-        new_vy1 = np.average(vx_list)
+        # 配列が空でないときのみ平均を求める
+        if theta_list:
+            
+            vx_points = np.average(np.cos(theta_list))
+            vy_points = np.average(np.sin(theta_list))
 
-        theta = np.arctan2(new_vy1,new_vx1)
+        # 壁からの反発で生じる速度
+        vx_wall,vy_wall = v_wall(Lx,Ly,x[i],y[i])
+        # print(vx_wall)
+        # print(x[i],vx_wall, vy_wall)
 
-        # 周囲の速度にある程度影響を受ける
-        alpha = 0.9
+        new_theta = np.arctan2(vy_points + vy_wall, vx_points + vx_wall)
 
-        velocities[0][i] = alpha * velocities[0][i] + (1-alpha) * speed * np.cos(theta)
-        velocities[1][i] = alpha * velocities[1][i] + (1-alpha) * speed * np.sin(theta)
+        # 周囲の方向を用いて自分の方向を修正
+        alpha = 0.5
 
-# 壁から離れようとする処理
-def away_from_wall(Lx,Ly,positions, velocities):
+        theta[i] = alpha * theta[i] + (1-alpha) * new_theta
 
-    for i in range(0,len(positions[0])):
-        # 物理的にはおかしいが，hyperbolic tangentにしてみる
-        pass
+    # print("---")
+
 
 
 # 壁からの距離に応じた反発力を速度として受ける
 
 
 # 時間ステップ数
-num_steps = 10
+num_steps = 500
 # 各時間ステップで生成する点の数
-num_points = 10
+num_points = 50
 
 # x, y の範囲
 Lx = 10  # x座標の範囲
@@ -77,19 +92,25 @@ output_dir = os.path.dirname(os.path.abspath(__file__))
 # 画像保存用リスト
 image_files = []
 
-x = np.random.rand(num_points) * Lx  # 0からLxの範囲でランダムなx座標
-y = np.random.rand(num_points) * Ly  # 0からLyの範囲でランダムなy座標
+xs = np.random.rand(num_points) * Lx  # 0からLxの範囲でランダムなx座標
+ys = np.random.rand(num_points) * Ly  # 0からLyの範囲でランダムなy座標
+thetas = 2 * np.pi * np.random.rand(num_points)
 
-theta = 2*np.pi * np.random.rand(num_points)
-vx = speed * np.cos(theta) # 0からLxの範囲でランダムなx座標
-vy = speed * np.sin(theta)   # 0からLyの範囲でランダムなy座標
+# xs = [1]  # 0からLxの範囲でランダムなx座標
+# ys = [9]  # 0からLyの範囲でランダムなy座標
+# thetas = [np.pi / 2]
+
+# print(thetas)
+
+# vx = speed * np.cos(theta) # 0からLxの範囲でランダムなx座標
+# vy = speed * np.sin(theta)   # 0からLyの範囲でランダムなy座標
 
 for i in range(1, num_steps + 1):
     # ランダムな二次元座標 (xj, yj) を生成
     
     # プロット
     plt.figure()
-    plt.scatter(x, y)
+    plt.scatter(xs, ys)
     plt.xlim(0, Lx)
     plt.ylim(0, Ly)
     plt.gca().set_aspect('equal')  # アスペクト比を固定
@@ -107,12 +128,13 @@ for i in range(1, num_steps + 1):
     plt.close()
 
     # update velocity
-    update_velocity([x,y],[vx,vy],cutoff)
+    update_direction(Lx,Ly,xs,ys,thetas,cutoff)
 
-    x = x + vx*dt
-    y = y + vy*dt
+    xs = xs + speed * np.cos(thetas) * dt
+    ys = ys + speed * np.sin(thetas) * dt
 
     print(f"Time step {i} のプロットを {filepath} に保存しました。")
+    # print(thetas)
 
 # 画像から動画を作成
 video_filename = os.path.join(output_dir, "swarm.mp4")
